@@ -24,7 +24,9 @@ def main(verbose, quiet):
 
 @main.command()
 @click.option('--close-issue/--no-close-issue', default=None)
-def commit(close_issue):
+@click.option('--commit/--no-commit', default=True)
+@click.option('--feature/--no-feature', default=False)
+def commit(close_issue, commit, feature):
     issues = list(_get_github_client().iter_issues(sort='updated'))
     p = subprocess.Popen(
         'choose', stdin=subprocess.PIPE, shell=True, stdout=subprocess.PIPE)
@@ -36,19 +38,36 @@ def commit(close_issue):
     issue_index, issue_text = text.split('.', 1)
     issue = issues[int(issue_index)]
     temp_filename = tempfile.mktemp()
+
+    if feature:
+        _write_feature(issue)
+
     with open(temp_filename, "w") as temp_file:
         temp_file.write(issue_text)
-    p = subprocess.Popen(
-        "git commit -a -e -F {}".format(temp_filename), shell=True)
-    if p.wait() != 0:
-        click.echo('Failed to commit changes')
-        raise click.Abort()
+    if commit:
+        p = subprocess.Popen(
+            "git commit -a -e -F {}".format(temp_filename), shell=True)
+        if p.wait() != 0:
+            click.echo('Failed to commit changes')
+            raise click.Abort()
 
     if close_issue is None:
         close_issue = click.confirm('Would you like to close the issue?')
 
     if close_issue:
         issue.close()
+
+
+def _write_feature(issue):
+    with open('doc/changelog.rst') as changelog_input, open('doc/changelog.rst.new', 'w') as changelog_output:
+        added = False
+        for line in changelog_input:
+            if not added and line.lstrip().startswith('*'):
+                print('* :feature:`{issue.number}` {issue.title}'.format(issue=issue), file=changelog_output)
+                added = True
+            changelog_output.write(line)
+    os.rename(changelog_output.name, changelog_input.name)
+
 
 
 def _format_issues(issues):
